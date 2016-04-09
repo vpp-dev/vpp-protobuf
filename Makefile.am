@@ -16,8 +16,15 @@ AUTOMAKE_OPTIONS = foreign subdir-objects
 AM_CFLAGS = -Wall -I@TOOLKIT_INCLUDE@
 
 lib_LTLIBRARIES = protobuf.la
-protobuf_la_SOURCES = protobuf/main.c
+protobuf_la_SOURCES = protobuf/main.c protobuf/vpp.pb-c.c
 protobuf_la_LDFLAGS = -module
+
+BUILT_SOURCES = protobuf/vpp.pb-c.c protobuf/vpp.pb-c.h
+
+SUFFIXES = .pb-c.c .pb-c.h
+
+%.pb-c.c %.pb-c.h: %.proto
+	protoc-c --c_out=. $<
 
 nobase_include_HEADERS =
 

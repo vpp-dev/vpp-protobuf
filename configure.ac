@@ -6,6 +6,17 @@ AM_SILENT_RULES
 AC_PROG_CC
 AM_PROG_CC_C_O
 
+AC_CHECK_PROG( [PROTOC_C], [protoc-c], yes)
+
+if test x"$PROTOC_C" != x"yes" ; then
+	    AC_MSG_ERROR([Please install protobuf-c-compiler.])
+fi
+
+AC_CHECK_HEADERS(
+	[protobuf-c/protobuf-c.h],
+	[], [AC_MSG_ERROR([protobuf-c header files not found])],
+)
+
 AC_ARG_WITH(plugin-toolkit,
             AC_HELP_STRING([--with-plugin-toolkit],
             [build using the vpp toolkit]),

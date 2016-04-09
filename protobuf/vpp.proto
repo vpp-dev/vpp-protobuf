@@ -1,0 +1,9 @@
+message get_version_req {
+  required int32 msg_id = 1;
+}
+
+message get_version_rsp {
+  required int32 msg_id = 1;
+  required string version = 2;
+}
+
