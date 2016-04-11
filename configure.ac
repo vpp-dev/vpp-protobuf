@@ -13,7 +13,7 @@ if test x"$PROTOC_C" != x"yes" ; then
 fi
 
 AC_CHECK_HEADERS(
-	[protobuf-c/protobuf-c.h],
+	[google/protobuf-c/protobuf-c.h],
 	[], [AC_MSG_ERROR([protobuf-c header files not found])],
 )
 
