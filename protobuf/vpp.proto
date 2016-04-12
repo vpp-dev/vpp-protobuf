@@ -1,9 +1,45 @@
-message get_version_req {
-  required int32 msg_id = 1;
+/*
+ * Copyright (c) 2015 Cisco and/or its affiliates.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at:
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// request types
+enum RequestType {
+    GET_VERSION = 0;    // no payload
 }
 
-message get_version_rsp {
-  required int32 msg_id = 1;
-  required string version = 2;
+// response types
+enum ResponseType {
+    VPP_VERSION = 0;    // VppVersionResp payload
+}
+
+// request
+message VppRequest {
+  required int32 id = 1;          // request id
+  required RequestType type = 2;  // request type
+  optional bytes payload = 3;     // gpb encoded payload based on type
+}
+
+// response
+message VppResponse {
+  required int32 id = 1;          // id of request we respond to
+  required ResponseType type = 2; // response type
+  required int32 retCode = 3;     // return code indicating success/failure of request
+  optional bytes payload = 4;     // gpb encoded payload based on type
+}
+
+// get version response payload
+message VppVersionResp {
+  required string version = 1;
 }
 
