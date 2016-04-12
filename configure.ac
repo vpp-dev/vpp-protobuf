@@ -16,6 +16,10 @@ AC_CHECK_HEADERS(
 	[google/protobuf-c/protobuf-c.h],
 	[], [AC_MSG_ERROR([protobuf-c header files not found])],
 )
+AC_CHECK_HEADERS(
+	[ev.h],
+	[], [AC_MSG_ERROR([libev header files not found])],
+)
 
 AC_ARG_WITH(plugin-toolkit,
             AC_HELP_STRING([--with-plugin-toolkit],
