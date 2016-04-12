@@ -20,6 +20,7 @@
 #include <sys/socket.h>
 /* For gethostbyname */
 #include <netdb.h>
+#include <fcntl.h>
 #include "vppprotobuf.h"
 #include "tcpclient.h"
 
@@ -67,6 +68,11 @@ protobuf_client_t *protobuf_tcp_connect(protobuf_client_t *client, const char *h
         close(fd);
         return NULL;
     }
+
+    // non blocking socket
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
     client->fd = fd;
     strncpy(client->address, hostname, sizeof(client->address));
     client->address[sizeof(client->address)-1] = '\0';
