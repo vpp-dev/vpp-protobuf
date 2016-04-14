@@ -21,6 +21,23 @@
 
 protobuf_main_t protobuf_main;
 
+static void *pb_alloc(void *allocator_data, size_t size)
+{
+    return clib_mem_alloc(size);
+}
+
+static void pb_free(void *allocator_data, void *data)
+{
+    free(data);
+}
+
+ProtobufCAllocator protobuf_allocator = {
+    .alloc = &pb_alloc,
+    .free = &pb_free,
+    .allocator_data = NULL,
+};
+
+
 clib_error_t *
 vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
                       int from_early_init)
@@ -51,7 +68,7 @@ static void protobuf_thread_fn (void *arg)
         clib_warning("Retry..");
         sleep(3);
     }
-    free(client);
+    protobuf_client_free(client);
 }
 
 

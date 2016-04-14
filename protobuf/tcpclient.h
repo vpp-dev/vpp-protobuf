@@ -15,9 +15,16 @@
 #ifndef __VPPPROTOBUF_TCPCLIENT_H__
 #define __VPPPROTOBUF_TCPCLIENT_H__
 
+#include <stdint.h>
 #include <ev.h>
 
-#define BUFFER_SIZE 1024
+// max message size 16 MB
+#define MAX_GPB_MESSAGE_SIZE    (1 << 24)
+
+// client is idle (no message being processed)
+#define PBC_STATE_IDLE      1
+// reading message
+#define PBC_STATE_READMSG   2
 
 typedef struct {
     int fd;
@@ -26,6 +33,11 @@ typedef struct {
 
     char address[128];
     int port;
+
+    int state;  // client state
+
+    uint8_t *buf_read;  // vector containing read data
+    uint32_t remaining_size;  // remaining message size
 } protobuf_client_t;
 
 /**
@@ -37,6 +49,16 @@ typedef struct {
  * @return pointer to allocated protobuf client structure or NULL indicating error
  */
 protobuf_client_t *protobuf_tcp_connect(protobuf_client_t *client, const char *hostname, int port);
+
+/**
+ * @brief Disconnect client and stop all event handlers related to the client
+ */
+void protobuf_client_disconnect(protobuf_client_t *client);
+
+/**
+ * @brief Free resources used by client and client object itself
+ */
+void protobuf_client_free(protobuf_client_t *client);
 
 #endif
 

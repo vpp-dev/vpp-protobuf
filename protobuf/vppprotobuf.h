@@ -16,6 +16,9 @@
 #define __VPPPROTOBUF__H__
 
 #include <ev.h>
+#include "vpp.pb-c.h"
+
+extern ProtobufCAllocator protobuf_allocator;
 
 typedef struct {
     struct ev_loop *ev_loop;
