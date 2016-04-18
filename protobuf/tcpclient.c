@@ -81,6 +81,9 @@ protobuf_client_t *protobuf_tcp_connect(protobuf_client_t *client, const char *h
     // store pointer to client so we can use it when event occurs
     client->ev_read.data = client;
 
+    // client is idle / waiting for message
+    client->state = PBC_STATE_IDLE;
+
     // workaround for bogus strict aliasing warning in gcc 4
     struct ev_io *ev_read = &client->ev_read; 
     ev_io_init(ev_read, protobuf_read_cb, fd, EV_READ);
@@ -124,6 +127,8 @@ static uint32_t protobuf_read_msg_size(protobuf_client_t *client)
 
     // store expected message size
     client->remaining_size = msg_size;
+
+    clib_warning("DEBUG: expected msg size: %d", msg_size);
 
     return rsize;
 }
@@ -188,7 +193,8 @@ static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int re
             client->state = PBC_STATE_READMSG;
 
         case PBC_STATE_READMSG:
-            rsize = recv(client->fd, client->buf_read, client->remaining_size, 0);
+            rsize = recv(client->fd, client->buf_read + vec_len(client->buf_read),
+                    client->remaining_size, 0);
             if (rsize <= 0) {
                 if (rsize < 0)
                     clib_warning("error reading data from client %s:%d. "
@@ -201,12 +207,15 @@ static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int re
             }
 
             clib_warning("received data of size %d", rsize);
+            _vec_len(client->buf_read) += rsize;
 
             // if we didn't read whole message
             if (rsize < client->remaining_size) {
-                _vec_len(client->buf_read) += rsize;
+                client->remaining_size -= rsize;
                 return;
             }
+
+            client->remaining_size = 0;
 
             // got full message, process it
             protobuf_process_buffer(client, client->buf_read, vec_len(client->buf_read));

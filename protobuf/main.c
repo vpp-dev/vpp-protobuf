@@ -28,7 +28,7 @@ static void *pb_alloc(void *allocator_data, size_t size)
 
 static void pb_free(void *allocator_data, void *data)
 {
-    free(data);
+    clib_mem_free(data);
 }
 
 clib_error_t *

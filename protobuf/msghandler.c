@@ -35,6 +35,7 @@ static int protobuf_req_get_version(protobuf_client_t *client, VppResponse *resp
     if (payload != NULL) {
         resp->payload.len = vec_len(payload);
         resp->payload.data = payload;
+        resp->has_payload = 1;
         return 0;
     }
 
@@ -49,6 +50,7 @@ static int protobuf_req_get_version(protobuf_client_t *client, VppResponse *resp
 
     resp->payload.len = vec_len(payload);
     resp->payload.data = payload;
+    resp->has_payload = 1;
     return 0;
 }
 
@@ -78,6 +80,8 @@ int protobuf_handle_request(protobuf_client_t *client, VppRequest *req)
     ssize_t sent = 0;
     uint32_t ps = htonl(packed_size);
 
+    clib_warning("prepared response");
+
     // FIXME & TODO: this needs to be handled in write event
     while (1) {
         sent = send(client->fd, &ps, sizeof(ps), 0);
@@ -93,6 +97,8 @@ int protobuf_handle_request(protobuf_client_t *client, VppRequest *req)
         }
         break;
     }
+
+    clib_warning("sent size: %d", packed_size);
 
     ssize_t total_sent = 0;
     while (total_sent < packed_size) {
@@ -112,6 +118,8 @@ int protobuf_handle_request(protobuf_client_t *client, VppRequest *req)
         if (total_sent < packed_size)
             usleep(100000); // sleep 100 ms
     }
+
+    clib_warning("sent whole message");
 
     return 0;
 }
