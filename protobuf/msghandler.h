@@ -12,19 +12,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef __VPPPROTOBUF__H__
-#define __VPPPROTOBUF__H__
+#ifndef __VPPPROTOBUF_MSGHANDLER_H__
+#define __VPPPROTOBUF_MSGHANDLER_H__
 
-#include <ev.h>
-#include <vppinfra/error.h>
-#include "vpp.pb-c.h"
+#include "vppprotobuf.h"
+#include "tcpclient.h"
 
-typedef struct {
-    struct ev_loop *ev_loop;
-    ProtobufCAllocator allocator;
-} protobuf_main_t;
-
-extern protobuf_main_t protobuf_main;
+int protobuf_handle_request(protobuf_client_t *client, VppRequest *req);
 
 #endif
 

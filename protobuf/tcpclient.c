@@ -13,7 +13,6 @@
  * limitations under the License.
  */
 
-#include <vppinfra/error.h>
 /* For sockaddr_in */
 #include <netinet/in.h>
 /* For socket functions */
@@ -22,6 +21,7 @@
 #include <netdb.h>
 #include <fcntl.h>
 #include "vppprotobuf.h"
+#include "msghandler.h"
 #include "tcpclient.h"
 
 static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents);
@@ -105,6 +105,7 @@ void protobuf_client_free(protobuf_client_t *client)
         return;
 
     vec_free(client->buf_read);
+    vec_free(client->buf_write);
     free(client);
 }
 
@@ -129,9 +130,11 @@ static uint32_t protobuf_read_msg_size(protobuf_client_t *client)
 
 static void protobuf_process_buffer(protobuf_client_t *client, const uint8_t *buf, ssize_t buf_size)
 {
-    struct ev_loop *loop = protobuf_main.ev_loop;
+    protobuf_main_t *pbmain = &protobuf_main;
+    struct ev_loop *loop = pbmain->ev_loop;
+    int rc = 0;
 
-    VppRequest *req = vpp_request__unpack(&protobuf_allocator, buf_size, buf);
+    VppRequest *req = vpp_request__unpack(&pbmain->allocator, buf_size, buf);
     if (req == NULL) {
         clib_warning("error unpacking incoming GPB request, "
                 "closing client connection");
@@ -139,9 +142,12 @@ static void protobuf_process_buffer(protobuf_client_t *client, const uint8_t *bu
         return;
     }
 
-    // TODO: do something with the processed request
+    rc = protobuf_handle_request(client, req);
+    if (rc < 0) {
+        clib_warning("error processing request from %s:%d message id: %d", client->address, client->port, req->id);
+    }
 
-    vpp_request__free_unpacked(req, &protobuf_allocator);
+    vpp_request__free_unpacked(req, &pbmain->allocator);
 }
 
 static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)

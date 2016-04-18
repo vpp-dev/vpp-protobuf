@@ -16,7 +16,7 @@ AUTOMAKE_OPTIONS = foreign subdir-objects
 AM_CFLAGS = -Wall -I@TOOLKIT_INCLUDE@
 
 lib_LTLIBRARIES = protobuf.la
-protobuf_la_SOURCES = protobuf/main.c protobuf/vpp.pb-c.c protobuf/tcpclient.c
+protobuf_la_SOURCES = protobuf/main.c protobuf/vpp.pb-c.c protobuf/tcpclient.c protobuf/msghandler.c
 protobuf_la_LDFLAGS = -module -lev
 
 BUILT_SOURCES = protobuf/vpp.pb-c.c protobuf/vpp.pb-c.h

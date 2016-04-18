@@ -36,8 +36,10 @@ typedef struct {
 
     int state;  // client state
 
-    uint8_t *buf_read;  // vector containing read data
-    uint32_t remaining_size;  // remaining message size
+    uint8_t *buf_read;  // incoming data vector
+    uint32_t remaining_size;  // remaining message size to read
+
+    uint8_t *buf_write; // outgoing data vector
 } protobuf_client_t;
 
 /**

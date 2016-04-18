@@ -31,13 +31,6 @@ static void pb_free(void *allocator_data, void *data)
     free(data);
 }
 
-ProtobufCAllocator protobuf_allocator = {
-    .alloc = &pb_alloc,
-    .free = &pb_free,
-    .allocator_data = NULL,
-};
-
-
 clib_error_t *
 vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
                       int from_early_init)
@@ -53,7 +46,6 @@ vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
 
 static void protobuf_thread_fn (void *arg)
 {
-    protobuf_main.ev_loop = ev_default_loop(0);
     protobuf_client_t *client = NULL;
 
     while(1)
@@ -84,6 +76,11 @@ VLIB_REGISTER_THREAD (protobuf_thread_reg, static) = {
 
 static clib_error_t * protobuf_init (vlib_main_t * vm)
 {
+    protobuf_main.allocator.alloc = &pb_alloc;
+    protobuf_main.allocator.free = &pb_free;
+    protobuf_main.allocator.allocator_data = NULL;
+    protobuf_main.ev_loop = ev_default_loop(0);
+
     clib_warning("init");
     return 0;
 }
