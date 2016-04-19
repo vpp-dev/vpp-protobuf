@@ -21,12 +21,26 @@
 
 #define VERSION_STRING "TestVersion 0.000001"
 
+void vl_api_rpc_call_main_thread (void *fp, u8 * data, u32 data_length);
+
+
+static void vpp_get_version_rpc_callback(void *args)
+{
+    ASSERT(os_get_cpu_number() == 0);
+    char * vpe_api_get_version (void);
+    char **pversion = args;
+
+    clib_warning("MAIN THREAD: %p (%p)", *pversion, pversion);
+    // FIXME: undefined reference to vpe_api_get_version() ?!
+    *pversion = vpe_api_get_version();
+}
+
 // warning: passing reference to local static buffer
 // do not call get version if the response was not encoded to buffer yet
 static int protobuf_req_get_version(protobuf_client_t *client, VppResponse *resp)
 {
     VppVersionResp msg = VPP_VERSION_RESP__INIT;
-    static char *version = NULL;
+    //static char *version = NULL;
     static uint8_t *payload = NULL;
 
     resp->type = RESPONSE_TYPE__VPP_VERSION;
@@ -39,14 +53,15 @@ static int protobuf_req_get_version(protobuf_client_t *client, VppResponse *resp
         return 0;
     }
 
-    // TODO: get vpp version
-    vec_validate(version, strlen(VERSION_STRING));
-    strcpy((char *)version, VERSION_STRING);
+    // TODO: call vpp main thread to get vpp version & wait for response
+    //vl_api_rpc_call_main_thread (vpp_get_version_rpc_callback, (u8 *)&version, sizeof(&version));
 
-    msg.version = version;
+    msg.version = VERSION_STRING;
 
-    vec_validate(payload, vpp_version_resp__get_packed_size(&msg));
+    size_t packed_size = vpp_version_resp__get_packed_size(&msg);
+    vec_validate(payload, packed_size - 1);
     vpp_version_resp__pack(&msg, payload);
+    _vec_len(payload) = packed_size;
 
     resp->payload.len = vec_len(payload);
     resp->payload.data = payload;
@@ -73,6 +88,7 @@ int protobuf_handle_request(protobuf_client_t *client, VppRequest *req)
     }
 
     size_t packed_size = vpp_response__get_packed_size(&resp);
+    // FIXME: write buffer may not be empty
     vec_validate(client->buf_write, packed_size);
     vpp_response__pack(&resp, client->buf_write);
     _vec_len(client->buf_write) = packed_size;
