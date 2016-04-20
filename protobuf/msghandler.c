@@ -87,55 +87,19 @@ int protobuf_handle_request(protobuf_client_t *client, VppRequest *req)
             break;
     }
 
+    // get size of buffer after it is packed
     size_t packed_size = vpp_response__get_packed_size(&resp);
-    // FIXME: write buffer may not be empty
-    vec_validate(client->buf_write, packed_size);
-    vpp_response__pack(&resp, client->buf_write);
-    _vec_len(client->buf_write) = packed_size;
 
-    ssize_t sent = 0;
-    uint32_t ps = htonl(packed_size);
+    // prepare buffer for the uint32 size + packed message
+    vec_validate(client->buf_write, packed_size + 4 - 1);
+    _vec_len(client->buf_write) = packed_size + 4;
+
+    // write size to first 4 bytes
+    *((uint32_t *)client->buf_write) = htonl(packed_size);
+    // write packed message to remaining place in buffer
+    vpp_response__pack(&resp, client->buf_write + 4);
 
     clib_warning("prepared response");
-
-    // FIXME & TODO: this needs to be handled in write event
-    while (1) {
-        sent = send(client->fd, &ps, sizeof(ps), 0);
-        if (sent <= 0) {
-            if (errno == EAGAIN) {
-                usleep(100000);
-                continue;
-            }
-
-            clib_warning("error sending response to %s:%d for message id %d (%s)", client->address, client->port, req->id, strerror(errno));
-            protobuf_client_disconnect(client);
-            return -1; // FIXME
-        }
-        break;
-    }
-
-    clib_warning("sent size: %d", packed_size);
-
-    ssize_t total_sent = 0;
-    while (total_sent < packed_size) {
-        sent = send(client->fd, client->buf_write + total_sent, packed_size - total_sent, 0);
-        if (sent <= 0) {
-            if (errno == EAGAIN) {
-                usleep(100000);
-                continue;
-            }
-
-            clib_warning("error sending response to %s:%d for message id %d (%s)", client->address, client->port, req->id, strerror(errno));
-            protobuf_client_disconnect(client);
-            return -1; // FIXME
-        }
-
-        total_sent += sent;
-        if (total_sent < packed_size)
-            usleep(100000); // sleep 100 ms
-    }
-
-    clib_warning("sent whole message");
 
     return 0;
 }

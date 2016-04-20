@@ -25,6 +25,7 @@
 #include "tcpclient.h"
 
 static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents);
+static void protobuf_write_cb(struct ev_loop *loop, struct ev_io *watcher, int revents);
 
 protobuf_client_t *protobuf_tcp_connect(protobuf_client_t *client, const char *hostname, int port)
 {
@@ -80,15 +81,22 @@ protobuf_client_t *protobuf_tcp_connect(protobuf_client_t *client, const char *h
 
     // store pointer to client so we can use it when event occurs
     client->ev_read.data = client;
+    client->ev_write.data = client;
+
+    client->sent = 0;
+    client->remaining_size = 0;
 
     // client is idle / waiting for message
     client->state = PBC_STATE_IDLE;
 
     // workaround for bogus strict aliasing warning in gcc 4
-    struct ev_io *ev_read = &client->ev_read; 
-    ev_io_init(ev_read, protobuf_read_cb, fd, EV_READ);
-    ev_io_start(protobuf_main.ev_loop, ev_read);
-    // TODO: ev_io_init(client->ev_write, protobuf_write_cb, fd, EV_WRITE);
+    struct ev_io *ev_w = &client->ev_read;
+
+    ev_io_init(ev_w, protobuf_read_cb, fd, EV_READ);
+    ev_io_start(protobuf_main.ev_loop, ev_w);
+
+    ev_w = &client->ev_write;
+    ev_io_init(ev_w, protobuf_write_cb, fd, EV_WRITE);
 
     return client;
 }
@@ -99,6 +107,7 @@ void protobuf_client_disconnect(protobuf_client_t *client)
         return;
 
     ev_io_stop(protobuf_main.ev_loop, &client->ev_read);
+    ev_io_stop(protobuf_main.ev_loop, &client->ev_write);
     close(client->fd);
 }
 
@@ -157,6 +166,7 @@ static void protobuf_process_buffer(protobuf_client_t *client, const uint8_t *bu
 
 static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
 {
+    protobuf_main_t *pbmain = &protobuf_main;
     protobuf_client_t *client = (protobuf_client_t *)(watcher->data);
     ssize_t rsize = 0;
 
@@ -215,10 +225,19 @@ static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int re
                 return;
             }
 
+            // stop processing read events for this client until
+            // message is processed and response is sent
+            ev_io_stop(pbmain->ev_loop, &client->ev_read);
+
             client->remaining_size = 0;
 
             // got full message, process it
             protobuf_process_buffer(client, client->buf_read, vec_len(client->buf_read));
+
+            if (vec_len(client->buf_write) > 0) {
+                // start write event watcher to write response to client
+                ev_io_start(protobuf_main.ev_loop, &client->ev_write);
+            }
 
             // set idle state and let libev call read event again if needed
             client->state = PBC_STATE_IDLE;
@@ -231,6 +250,41 @@ static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int re
     }
 }
 
-void protobuf_write_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
+static void protobuf_write_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
 {
+    protobuf_main_t *pbmain = &protobuf_main;
+    protobuf_client_t *client = (protobuf_client_t *)(watcher->data);
+    ssize_t sent = 0;
+
+    if (EV_ERROR & revents) {
+        clib_warning("error during write event");
+        return;
+    }
+
+    sent = send(client->fd, client->buf_write + client->sent,
+            vec_len(client->buf_write) - client->sent, 0);
+    if (sent < 0) {
+        clib_warning("error sending response to %s:%d (%s)", client->address, client->port, strerror(errno));
+        protobuf_client_disconnect(client);
+        return;
+    }
+
+    // if we didn't send everything
+    if (sent + client->sent < vec_len(client->buf_write)) {
+        client->sent += sent;
+        return; // wait for next write event
+    }
+
+    // reset write buffer
+    _vec_len(client->buf_write) = 0;
+    client->sent = 0;
+
+    clib_warning("sent whole message");
+
+    // stop write event watcher until we have something to write
+    ev_io_stop(pbmain->ev_loop, &client->ev_write);
+
+    // start processing read events again
+    ev_io_start(pbmain->ev_loop, &client->ev_read);
 }
+

@@ -40,6 +40,7 @@ typedef struct {
     uint32_t remaining_size;  // remaining message size to read
 
     uint8_t *buf_write; // outgoing data vector
+    uint32_t sent;      // how many bytes were already sent
 } protobuf_client_t;
 
 /**
