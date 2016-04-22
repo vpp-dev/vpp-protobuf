@@ -15,12 +15,14 @@
 
 // request types
 enum RequestType {
-    GET_VERSION = 0;    // no payload
+  GET_VERSION = 0;    // no payload (gets VPP_RESPONSE response)
+  CFG_ROUTES = 1;     // VppRoutesCfgReq payload
 }
 
 // response types
 enum ResponseType {
-    VPP_VERSION = 0;    // VppVersionResp payload
+  SIMPLE = 0;         // simple response with no payload
+  VPP_VERSION = 1;    // VppVersionResp payload
 }
 
 // request
@@ -38,7 +40,67 @@ message VppResponse {
   optional bytes payload = 4;     // gpb encoded payload based on type
 }
 
-// get version response payload
+/**
+ * Routes configuration
+ *
+ * Gets SIMPLE response with no payload
+ */
+// single next hop entry used in route configuration
+message VppNextHop {
+  enum NextHopProtocol {
+    IPV4 = 1;
+    IPV6 = 2;
+  }
+  required NextHopProtocol proto = 1;
+
+  enum NextHopType {
+    RECURSIVE = 1;
+    NON_RECURSIVE = 2;
+  }
+  required NextHopType type = 2;
+
+  optional bytes ipAddress = 3;
+  optional bytes macAddress = 4;
+  optional string interface_name = 5;
+
+  optional uint32 weight = 6;
+}
+
+// single IPv4/IPv6 route entry
+message VppIpRoute {
+  required bytes address = 1;
+  required uint32 prefix = 2;
+  repeated VppNextHop nextHops = 3;
+}
+
+// route entry for route configuration
+message VppRoute {
+  enum RouteProtocol {
+    IPV4 = 1;
+    IPV6 = 2;
+  }
+  required RouteProtocol proto = 1;
+
+  enum Operation {
+    ADD = 1;
+    REMOVE = 2;
+    UPDATE = 3;
+  }
+  required Operation op = 2;
+
+  optional uint32 vrfId = 3;
+  optional VppIpRoute ipRoute = 4;
+}
+
+// routes config request
+message VppRoutesCfgReq {
+  repeated VppRoute routes = 1;
+}
+
+
+/**
+ * get version response payload
+ */
 message VppVersionResp {
   required string version = 1;
 }
