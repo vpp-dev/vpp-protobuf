@@ -64,6 +64,9 @@ static void vpp_get_version_response_callback(struct ev_loop *loop, struct ev_as
     // get prepared response from client data
     VppResponse *resp = &client->resp;
 
+    // set response type
+    resp->type = RESPONSE_TYPE__VPP_VERSION;
+
     // get version from event data context
     msg.version = (char *)ev_data->context;
 

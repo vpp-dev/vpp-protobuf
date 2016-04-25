@@ -266,6 +266,7 @@ static void protobuf_write_cb(struct ev_loop *loop, struct ev_io *watcher, int r
         return;
     }
 
+    // FIXME: check if client disconnected before sending to not cause SIGPIPE
     sent = send(client->fd, client->buf_write + client->sent,
             vec_len(client->buf_write) - client->sent, 0);
     if (sent < 0) {
