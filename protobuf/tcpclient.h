@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 #include <ev.h>
+#include "vppprotobuf.h"
 
 // max message size 16 MB
 #define MAX_GPB_MESSAGE_SIZE    (1 << 24)
@@ -26,10 +27,14 @@
 // reading message
 #define PBC_STATE_READMSG   2
 
+typedef struct protobuf_vpp_event_data_s protobuf_vpp_event_data_t;
+
+// protobuf client structure
 typedef struct {
     int fd;
     struct ev_io ev_read;
     struct ev_io ev_write;
+    struct ev_async ev_vpp;
 
     char address[128];
     int port;
@@ -41,7 +46,15 @@ typedef struct {
 
     uint8_t *buf_write; // outgoing data vector
     uint32_t sent;      // how many bytes were already sent
+
+    VppResponse resp;   // cached response in progress
 } protobuf_client_t;
+
+// event data for async event from vpp (stored in struct ev_async data)
+struct protobuf_vpp_event_data_s {
+    protobuf_client_t *client;
+    void *context;
+};
 
 /**
  * @brief Connect TCP socket to host on port

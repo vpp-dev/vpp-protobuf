@@ -83,6 +83,14 @@ protobuf_client_t *protobuf_tcp_connect(protobuf_client_t *client, const char *h
     client->ev_read.data = client;
     client->ev_write.data = client;
 
+    // prepare event data for async events from vpp
+    protobuf_vpp_event_data_t *ev_vpp_data =
+        (protobuf_vpp_event_data_t *)clib_mem_alloc(sizeof(*ev_vpp_data));
+    ev_vpp_data->client = client;
+    ev_vpp_data->context = NULL;
+
+    client->ev_vpp.data = ev_vpp_data;
+
     client->sent = 0;
     client->remaining_size = 0;
 
@@ -108,6 +116,7 @@ void protobuf_client_disconnect(protobuf_client_t *client)
 
     ev_io_stop(protobuf_main.ev_loop, &client->ev_read);
     ev_io_stop(protobuf_main.ev_loop, &client->ev_write);
+    ev_async_stop(protobuf_main.ev_loop, &client->ev_vpp);
     close(client->fd);
 }
 
@@ -116,6 +125,7 @@ void protobuf_client_free(protobuf_client_t *client)
     if (client == NULL)
         return;
 
+    clib_mem_free(client->ev_vpp.data);
     vec_free(client->buf_read);
     vec_free(client->buf_write);
     free(client);
@@ -233,11 +243,6 @@ static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int re
 
             // got full message, process it
             protobuf_process_buffer(client, client->buf_read, vec_len(client->buf_read));
-
-            if (vec_len(client->buf_write) > 0) {
-                // start write event watcher to write response to client
-                ev_io_start(protobuf_main.ev_loop, &client->ev_write);
-            }
 
             // set idle state and let libev call read event again if needed
             client->state = PBC_STATE_IDLE;
