@@ -178,10 +178,8 @@ static void vpp_cfg_routes_response_callback(struct ev_loop *loop, struct ev_asy
 static void protobuf_req_cfg_routes(protobuf_client_t *client, VppResponse *resp, VppRequest *req)
 {
     //read payload from request
-    uint8_t reqPayload[req->payload.len];
-    memcpy(reqPayload, req->payload.data, req->payload.len);
+    VppRoutesCfgReq * req_routes = vpp_routes_cfg_req__unpack(NULL, req->payload.len, req->payload.data);
 
-    VppRoutesCfgReq * req_routes = vpp_routes_cfg_req__unpack(NULL, req->payload.len, reqPayload);
     uint32_t 	i;
     for (i=0; i<req_routes->n_routes; i++)
     {
@@ -195,12 +193,12 @@ static void protobuf_req_cfg_routes(protobuf_client_t *client, VppResponse *resp
             VppIpRoute * req_iproute = req_route->iproute;
 
             uint8_t *buffer = NULL;
-            vec_validate(buffer, 256);
+            vec_validate(buffer, req_iproute->address.len);
             memcpy(buffer, req_iproute->address.data, req_iproute->address.len);
-            _vec_len(buffer) = req_iproute->address.len;
+            buffer[req_iproute->address.len] = 0;
             clib_warning("cfg_route_iproute_req : address : %s", buffer);
-
             clib_warning("cfg_route_iproute_req : prefix : %d", req_iproute->prefix);
+
             uint32_t	j;
             for (j=0; j<req_route->iproute->n_nexthops; j++)
             {
@@ -209,16 +207,16 @@ static void protobuf_req_cfg_routes(protobuf_client_t *client, VppResponse *resp
                 clib_warning("cfg_route_iproute_hop_req : type : %d", req_hop->type);
                 if (req_hop->has_ipaddress)
                 {
-                    vec_zero(buffer);
+                    vec_validate(buffer, req_hop->ipaddress.len);
                     memcpy(buffer, req_hop->ipaddress.data, req_hop->ipaddress.len);
-                    _vec_len(buffer) = req_hop->ipaddress.len;
+                    buffer[req_hop->ipaddress.len] = 0;
                     clib_warning("cfg_route_iproute_hop_req : address : %s", buffer);
                 }
                 if (req_hop->has_macaddress)
                 {
-                    vec_zero(buffer);
+                    vec_validate(buffer, req_hop->macaddress.len);
                     memcpy(buffer, req_hop->macaddress.data, req_hop->macaddress.len);
-                    _vec_len(buffer) = req_hop->macaddress.len;
+                    buffer[req_hop->macaddress.len] = 0;
                     clib_warning("cfg_route_iproute_hop_req : macAddress : %s", buffer);
                 }
                 if (req_hop->interface_name != NULL)
