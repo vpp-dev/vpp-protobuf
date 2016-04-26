@@ -56,6 +56,12 @@ struct protobuf_vpp_event_data_s {
     void *context;
 };
 
+// vpp return value struct
+typedef struct {
+	int32_t	ret_code;
+	uint8_t *err_desc;
+} protobuf_vpp_retval_t;
+
 /**
  * @brief Connect TCP socket to host on port
  *
