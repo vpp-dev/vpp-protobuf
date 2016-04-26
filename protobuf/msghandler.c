@@ -122,23 +122,22 @@ static void protobuf_req_get_version(protobuf_client_t *client, VppResponse *res
 
 static void vpp_cfg_routes_rpc_callback(void *args)
 {
-    /* NOTE: this is just example ip_add_del_route is not available from plugin for now */
-
     protobuf_main_t *pbmain = &protobuf_main;
     ASSERT(os_get_cpu_number() == 0);
     protobuf_vpp_request_context_t *ctx = args;
-    //protobuf_vpp_event_data_t *ev_data = (protobuf_vpp_event_data_t *)ctx->ev_response->data;
+    protobuf_vpp_event_data_t *ev_data = (protobuf_vpp_event_data_t *)ctx->ev_response->data;
 
-    // FIXME: undefined reference to ip_add_del_route()
-    // (needs the call in vlib for it to be accessible)
-    //ev_data->context = ip_add_del_route();
+    // TODO: handle request as in ip4/ip6_add_del_route_t_handler
 
-    // FIXME: send back result
-    //ev_data->context = ;
+    protobuf_vpp_retval_t *ret;
+    ret = (protobuf_vpp_retval_t *) malloc (sizeof (*ret));
+    // TODO: send back correct result
+    ret->ret_code = 0;
+    ret->err_desc = NULL;
+    ev_data->context = (void*)ret;
 
     // send the event to plugin
     ev_async_send (pbmain->ev_loop, ctx->ev_response);
-
 }
 
 static void vpp_cfg_routes_response_callback(struct ev_loop *loop, struct ev_async *watcher, int revents)
@@ -154,14 +153,23 @@ static void vpp_cfg_routes_response_callback(struct ev_loop *loop, struct ev_asy
     // set response type
     resp->type = RESPONSE_TYPE__SIMPLE;
 
-    // reset event context (no free as it is static string in this case)
-    ev_data->context = NULL;
-
     // stop event watcher as we've got response already
     ev_async_stop (pbmain->ev_loop, &client->ev_vpp);
 
     // return code
-    resp->retcode = 0;
+    if (ev_data->context!=NULL)
+    {
+    	protobuf_vpp_retval_t * retval = (protobuf_vpp_retval_t*)ev_data->context;
+    	resp->retcode = retval->ret_code;
+
+        clib_warning("cfg_route_req : RETVAL : %d", resp->retcode);
+        if (retval->err_desc)
+        {
+            clib_warning("cfg_route_req : ERRCODE : %s", retval->err_desc);
+            vec_free(retval->err_desc);
+        }
+    	free(ev_data->context);
+    }
 
     // send response (payload always gets freed after response is serialized)
     protobuf_send_response(client, resp);
