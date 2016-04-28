@@ -50,17 +50,18 @@ typedef struct {
     VppResponse resp;   // cached response in progress
 } protobuf_client_t;
 
+// vpp return value struct
+typedef struct {
+    int32_t	ret_code;
+    uint8_t *err_desc;
+} protobuf_vpp_retval_t;
+
 // event data for async event from vpp (stored in struct ev_async data)
 struct protobuf_vpp_event_data_s {
     protobuf_client_t *client;
     void *context;
+    protobuf_vpp_retval_t *retval;
 };
-
-// vpp return value struct
-typedef struct {
-	int32_t	ret_code;
-	uint8_t *err_desc;
-} protobuf_vpp_retval_t;
 
 /**
  * @brief Connect TCP socket to host on port
