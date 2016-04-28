@@ -120,6 +120,135 @@ static void protobuf_req_get_version(protobuf_client_t *client, VppResponse *res
     vl_api_rpc_call_main_thread (vpp_get_version_rpc_callback, (u8 *)&ctx, sizeof(ctx));
 }
 
+static void vpp_cfg_routes_rpc_callback(void *args)
+{
+    protobuf_main_t *pbmain = &protobuf_main;
+    ASSERT(os_get_cpu_number() == 0);
+    protobuf_vpp_request_context_t *ctx = args;
+    protobuf_vpp_event_data_t *ev_data = (protobuf_vpp_event_data_t *)ctx->ev_response->data;
+
+    // TODO: handle request as in ip4/ip6_add_del_route_t_handler
+
+    // TODO: send back right return code
+    protobuf_vpp_retval_t *retval = (protobuf_vpp_retval_t*)ev_data->retval;
+    if (retval)
+    {
+    	retval->ret_code = 0;
+    	retval->err_desc = NULL;
+    }
+
+    // send the event to plugin
+    ev_async_send (pbmain->ev_loop, ctx->ev_response);
+}
+
+static void vpp_cfg_routes_response_callback(struct ev_loop *loop, struct ev_async *watcher, int revents)
+{
+    protobuf_main_t *pbmain = &protobuf_main;
+    // get event data from watcher context
+    protobuf_vpp_event_data_t *ev_data = (protobuf_vpp_event_data_t *)watcher->data;
+    // get client from event data context
+    protobuf_client_t *client = ev_data->client;
+    // get prepared response from client data
+    VppResponse *resp = &client->resp;
+
+    // set response type
+    resp->type = RESPONSE_TYPE__SIMPLE;
+
+    // stop event watcher as we've got response already
+    ev_async_stop (pbmain->ev_loop, &client->ev_vpp);
+
+    // TODO: retval should be allocated here, but there are problems with VPP & plugin heaps
+    protobuf_vpp_retval_t * retval = (protobuf_vpp_retval_t*)ev_data->retval;
+    if (retval!=NULL)
+    {
+    	resp->retcode = retval->ret_code;
+
+        clib_warning ("cfg_route_req : RETVAL : %d", resp->retcode);
+        if (retval->err_desc)
+        {
+            clib_warning ("cfg_route_req : ERRCODE : %s", retval->err_desc);
+            vec_free (retval->err_desc);
+        }
+        clib_mem_free (retval);
+    }
+
+    // send response (payload always gets freed after response is serialized)
+    protobuf_send_response (client, resp);
+}
+
+static void protobuf_req_cfg_routes(protobuf_client_t *client, VppResponse *resp, VppRequest *req)
+{
+    //read payload from request
+    VppRoutesCfgReq * req_routes = vpp_routes_cfg_req__unpack(NULL, req->payload.len, req->payload.data);
+
+    uint32_t 	i;
+    for (i=0; i<req_routes->n_routes; i++)
+    {
+        VppRoute * req_route = req_routes->routes[i];
+        clib_warning("cfg_route_req : proto : %d", req_route->proto);
+        clib_warning("cfg_route_req : op : %d", req_route->op);
+        if (req_route->has_vrfid)
+            clib_warning("cfg_route_req : vrfid : %d", req_route->vrfid);
+        if (req_route->iproute != NULL)
+        {
+            VppIpRoute * req_iproute = req_route->iproute;
+
+            uint8_t *buffer = NULL;
+            vec_validate(buffer, req_iproute->address.len);
+            memcpy(buffer, req_iproute->address.data, req_iproute->address.len);
+            buffer[req_iproute->address.len] = 0;
+            clib_warning("cfg_route_iproute_req : address : %s", buffer);
+            clib_warning("cfg_route_iproute_req : prefix : %d", req_iproute->prefix);
+
+            uint32_t	j;
+            for (j=0; j<req_route->iproute->n_nexthops; j++)
+            {
+                VppNextHop * req_hop = req_route->iproute->nexthops[j];
+                clib_warning("cfg_route_iproute_hop_req : proto : %d", req_hop->proto);
+                clib_warning("cfg_route_iproute_hop_req : type : %d", req_hop->type);
+                if (req_hop->has_ipaddress)
+                {
+                    vec_validate(buffer, req_hop->ipaddress.len);
+                    memcpy(buffer, req_hop->ipaddress.data, req_hop->ipaddress.len);
+                    buffer[req_hop->ipaddress.len] = 0;
+                    clib_warning("cfg_route_iproute_hop_req : address : %s", buffer);
+                }
+                if (req_hop->has_macaddress)
+                {
+                    vec_validate(buffer, req_hop->macaddress.len);
+                    memcpy(buffer, req_hop->macaddress.data, req_hop->macaddress.len);
+                    buffer[req_hop->macaddress.len] = 0;
+                    clib_warning("cfg_route_iproute_hop_req : macAddress : %s", buffer);
+                }
+                if (req_hop->interface_name != NULL)
+                    clib_warning("cfg_route_iproute_hop_req : if_name : %s", req_hop->interface_name);
+                if (req_hop->has_weight)
+                    clib_warning("cfg_route_iproute_hop_req : weight : %d", req_hop->weight);
+            }
+            vec_free(buffer);
+    	}
+    }
+    vpp_routes_cfg_req__free_unpacked(req_routes, NULL);
+
+    protobuf_main_t *pbmain = &protobuf_main;
+    struct ev_async *ev_vpp = &client->ev_vpp;
+    // prepare response event handler
+    ev_async_init (ev_vpp, vpp_cfg_routes_response_callback);
+    ev_async_start (pbmain->ev_loop, ev_vpp);
+
+    // TODO: locking
+    protobuf_vpp_request_context_t ctx;
+    ctx.ev_response = &client->ev_vpp;
+    ctx.context = NULL;
+
+    // TODO: retval should be allocated in callback, but there are problems with VPP & plugin heaps
+    protobuf_vpp_event_data_t *ev_data = (protobuf_vpp_event_data_t *)ctx.ev_response->data;
+    ev_data->retval = clib_mem_alloc (sizeof (protobuf_vpp_retval_t));
+
+    // call vpp main thread to get vpp version & wait for response
+    vl_api_rpc_call_main_thread (vpp_cfg_routes_rpc_callback, (u8 *)&ctx, sizeof(ctx));
+}
+
 // handle received request
 int protobuf_handle_request(protobuf_client_t *client, VppRequest *req)
 {
@@ -135,6 +264,11 @@ int protobuf_handle_request(protobuf_client_t *client, VppRequest *req)
             clib_warning("received get version request from %s:%d", client->address, client->port);
             // call get version request, response will be sent in async response from vpp main thread
             protobuf_req_get_version(client, &client->resp);
+            break;
+        case REQUEST_TYPE__CFG_ROUTES:
+            clib_warning("received cfg_routes from %s:%d", client->address, client->port);
+            // call cfg routes request, response will be sent in async response from vpp main thread
+            protobuf_req_cfg_routes(client, &client->resp, req);
             break;
         default:
             clib_warning("unknown request type %d from %s:%d", req->type, client->address, client->port);
