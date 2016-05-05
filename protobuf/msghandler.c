@@ -132,12 +132,12 @@ int protobuf_handle_request(protobuf_client_t *client, VppRequest *req)
     // handle different types of messages
     switch(req->type) {
         case REQUEST_TYPE__GET_VERSION:
-            clib_warning("received get version request from %s:%d", client->address, client->port);
+            clib_warning("received get version request from %s:%d", client->hostname, client->port);
             // call get version request, response will be sent in async response from vpp main thread
             protobuf_req_get_version(client, &client->resp);
             break;
         default:
-            clib_warning("unknown request type %d from %s:%d", req->type, client->address, client->port);
+            clib_warning("unknown request type %d from %s:%d", req->type, client->hostname, client->port);
             client->resp.retcode = -1;   // FIXME
             // immediately send error response
             protobuf_send_response(client, &client->resp);
