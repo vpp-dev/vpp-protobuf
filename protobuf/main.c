@@ -18,8 +18,37 @@
 #include <ev.h>
 #include "tcpclient.h"
 #include "vppprotobuf.h"
+#include "pb_format.h"
+#include "protobuf_api.h"
 
 protobuf_main_t protobuf_main;
+
+int connect_server (protobuf_main_t * pbm, u8 * serverip, u16 port, u8 is_ipv6)
+{
+	char * address;
+
+	address = (char*) format (0, "%U%c", (is_ipv6)?format_ip6_address:format_ip4_address, serverip, 0);
+	clib_warning("Connecting to server %s on port %d ...", address, port);
+	vec_free (address);
+
+	memcpy (pbm->address, serverip, (is_ipv6)?16:4);
+	pbm->port = port;
+	pbm->is_ipv6 = is_ipv6;
+
+    return 0;
+}
+
+int disconnect_server (protobuf_main_t * pbm)
+{
+	if (pbm && pbm->client)
+	{
+		protobuf_client_disconnect(pbm->client);
+		memset (pbm->address, 0, 16 * sizeof (u8));
+		pbm->port = 0;
+	    return 0;
+	}
+    return 1;
+}
 
 static void *pb_alloc(void *allocator_data, size_t size)
 {
@@ -36,7 +65,7 @@ vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
                       int from_early_init)
 {
     clib_error_t * error = 0;
-    clib_warning("plugin register");
+    clib_warning("Plugin register");
 
     return error;
 }
@@ -46,21 +75,26 @@ vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
 
 static void protobuf_thread_fn (void *arg)
 {
-    protobuf_client_t *client = NULL;
+    char * hostname;
 
     while(1)
     {
-        client = protobuf_tcp_connect(client, HOSTNAME, PORT);
-        if (client != NULL) {
-            clib_warning("Connected to client %s:%d", client->address, client->port);
+    	hostname = (char*) format (0, "%U%c", (protobuf_main.is_ipv6)?format_ip6_address:format_ip4_address, protobuf_main.address, 0);
+    	protobuf_main.client = protobuf_tcp_connect(protobuf_main.client, (const char*)hostname, protobuf_main.port);
+        if (protobuf_main.client != NULL) {
+        	// TODO
+        	memcpy(protobuf_main.client->address, protobuf_main.address, 16);
+
+            clib_warning("Connected to client %s:%d", hostname, protobuf_main.client->port);
             // start processing events while any watcher is active
             ev_run(protobuf_main.ev_loop, 0);
         }
+        vec_free (hostname);
         // if client is not connected or it disconnected
         clib_warning("Retry..");
         sleep(3);
     }
-    protobuf_client_free(client);
+    protobuf_client_free(protobuf_main.client);
 }
 
 
@@ -81,7 +115,15 @@ static clib_error_t * protobuf_init (vlib_main_t * vm)
     protobuf_main.allocator.allocator_data = NULL;
     protobuf_main.ev_loop = ev_default_loop(0);
 
-    clib_warning("init");
+    clib_warning("Init");
+    protobuf_main.port = 0;
+    protobuf_main.client = NULL;
+    protobuf_main.is_ipv6 = 0;
+	memset (protobuf_main.address, 0, 16 * sizeof (u8));
+
+    protobuf_main_t * pbm = &protobuf_main;
+    clib_error_t * error = protobuf_plugin_api_hookup (vm, pbm);    
+    
     return 0;
 }
 
