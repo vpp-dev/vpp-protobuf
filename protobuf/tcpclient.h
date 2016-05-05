@@ -35,8 +35,11 @@ typedef struct {
     struct ev_io ev_read;
     struct ev_io ev_write;
     struct ev_async ev_vpp;
+    struct ev_async ev_disconnect;
 
-    char address[128];
+    char hostname[128];
+    u8 is_ipv6;
+    u8 address[16];
     int port;
 
     int state;  // client state
