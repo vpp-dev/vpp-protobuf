@@ -83,14 +83,6 @@ protobuf_client_t *protobuf_tcp_connect(protobuf_client_t *client, const char *h
     client->ev_read.data = client;
     client->ev_write.data = client;
 
-    // prepare event data for async events from vpp
-    protobuf_vpp_event_data_t *ev_vpp_data =
-        (protobuf_vpp_event_data_t *)clib_mem_alloc(sizeof(*ev_vpp_data));
-    ev_vpp_data->client = client;
-    ev_vpp_data->context = NULL;
-
-    client->ev_vpp.data = ev_vpp_data;
-
     client->sent = 0;
     client->remaining_size = 0;
 
@@ -116,7 +108,6 @@ void protobuf_client_disconnect(protobuf_client_t *client)
 
     ev_io_stop(protobuf_main.ev_loop, &client->ev_read);
     ev_io_stop(protobuf_main.ev_loop, &client->ev_write);
-    ev_async_stop(protobuf_main.ev_loop, &client->ev_vpp);
     close(client->fd);
 }
 
@@ -125,7 +116,6 @@ void protobuf_client_free(protobuf_client_t *client)
     if (client == NULL)
         return;
 
-    clib_mem_free(client->ev_vpp.data);
     vec_free(client->buf_read);
     vec_free(client->buf_write);
     free(client);
@@ -154,11 +144,11 @@ static uint32_t protobuf_read_msg_size(protobuf_client_t *client)
 
 static void protobuf_process_buffer(protobuf_client_t *client, const uint8_t *buf, ssize_t buf_size)
 {
-    protobuf_main_t *pbmain = &protobuf_main;
-    struct ev_loop *loop = pbmain->ev_loop;
+    protobuf_main_t *pbm = &protobuf_main;
+    struct ev_loop *loop = pbm->ev_loop;
     int rc = 0;
 
-    VppRequest *req = vpp_request__unpack(&pbmain->allocator, buf_size, buf);
+    VppRequest *req = vpp_request__unpack(&pbm->allocator, buf_size, buf);
     if (req == NULL) {
         clib_warning("error unpacking incoming GPB request, "
                 "closing client connection");
@@ -171,12 +161,12 @@ static void protobuf_process_buffer(protobuf_client_t *client, const uint8_t *bu
         clib_warning("error processing request from %s:%d message id: %d", client->address, client->port, req->id);
     }
 
-    vpp_request__free_unpacked(req, &pbmain->allocator);
+    vpp_request__free_unpacked(req, &pbm->allocator);
 }
 
 static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
 {
-    protobuf_main_t *pbmain = &protobuf_main;
+    protobuf_main_t *pbm = &protobuf_main;
     protobuf_client_t *client = (protobuf_client_t *)(watcher->data);
     ssize_t rsize = 0;
 
@@ -237,7 +227,7 @@ static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int re
 
             // stop processing read events for this client until
             // message is processed and response is sent
-            ev_io_stop(pbmain->ev_loop, &client->ev_read);
+            ev_io_stop(pbm->ev_loop, &client->ev_read);
 
             client->remaining_size = 0;
 
@@ -257,7 +247,7 @@ static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int re
 
 static void protobuf_write_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
 {
-    protobuf_main_t *pbmain = &protobuf_main;
+    protobuf_main_t *pbm = &protobuf_main;
     protobuf_client_t *client = (protobuf_client_t *)(watcher->data);
     ssize_t sent = 0;
 
@@ -266,11 +256,13 @@ static void protobuf_write_cb(struct ev_loop *loop, struct ev_io *watcher, int r
         return;
     }
 
-    // FIXME: check if client disconnected before sending to not cause SIGPIPE
     sent = send(client->fd, client->buf_write + client->sent,
-            vec_len(client->buf_write) - client->sent, 0);
+            vec_len(client->buf_write) - client->sent, MSG_NOSIGNAL);
     if (sent < 0) {
-        clib_warning("error sending response to %s:%d (%s)", client->address, client->port, strerror(errno));
+        if (errno == EPIPE)
+            clib_warning("client %s:%d disconnected before response was sent", client->address, client->port);
+        else
+            clib_warning("error sending response to %s:%d (%s)", client->address, client->port, strerror(errno));
         protobuf_client_disconnect(client);
         return;
     }
@@ -288,9 +280,9 @@ static void protobuf_write_cb(struct ev_loop *loop, struct ev_io *watcher, int r
     clib_warning("sent whole message");
 
     // stop write event watcher until we have something to write
-    ev_io_stop(pbmain->ev_loop, &client->ev_write);
+    ev_io_stop(pbm->ev_loop, &client->ev_write);
 
     // start processing read events again
-    ev_io_start(pbmain->ev_loop, &client->ev_read);
+    ev_io_start(pbm->ev_loop, &client->ev_read);
 }
 

@@ -34,7 +34,6 @@ typedef struct {
     int fd;
     struct ev_io ev_read;
     struct ev_io ev_write;
-    struct ev_async ev_vpp;
 
     char address[128];
     int port;
@@ -49,12 +48,6 @@ typedef struct {
 
     VppResponse resp;   // cached response in progress
 } protobuf_client_t;
-
-// event data for async event from vpp (stored in struct ev_async data)
-struct protobuf_vpp_event_data_s {
-    protobuf_client_t *client;
-    void *context;
-};
 
 /**
  * @brief Connect TCP socket to host on port

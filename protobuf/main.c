@@ -16,6 +16,8 @@
 #include <vnet/vnet.h>
 #include <vnet/plugin/plugin.h>
 #include <ev.h>
+
+#include "vppapi.h"
 #include "tcpclient.h"
 #include "vppprotobuf.h"
 
@@ -47,6 +49,11 @@ vlib_plugin_register (vlib_main_t * vm, vnet_plugin_handoff_t * h,
 static void protobuf_thread_fn (void *arg)
 {
     protobuf_client_t *client = NULL;
+    if (connect_to_vpe("protobuf") < 0) {
+        svm_region_exit();
+        fformat (stderr, "Couldn't connect to vpe, exiting...\n");
+        exit (1);
+    }
 
     while(1)
     {
@@ -61,6 +68,7 @@ static void protobuf_thread_fn (void *arg)
         sleep(3);
     }
     protobuf_client_free(client);
+    disconnect_from_vpe();
 }
 
 
@@ -81,7 +89,10 @@ static clib_error_t * protobuf_init (vlib_main_t * vm)
     protobuf_main.allocator.allocator_data = NULL;
     protobuf_main.ev_loop = ev_default_loop(0);
 
-    clib_warning("init");
+    clib_time_init (&protobuf_main.clib_time);
+
+    protobuf_api_hookup(&protobuf_main);
+    clib_warning("init done");
     return 0;
 }
 

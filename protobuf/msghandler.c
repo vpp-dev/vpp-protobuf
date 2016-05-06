@@ -17,64 +17,122 @@
 #include <arpa/inet.h>
 /* for send */
 #include <sys/socket.h>
-#include "msghandler.h"
+#include <vlibapi/api.h>
+#include <vlibmemory/api.h>
+#include <vlibsocket/api.h>
+#include <api/vpe_msg_enum.h>
 
-#define VERSION_STRING "TestVersion 0.000001"
+#define vl_typedefs             /* define message structures */
+#include <api/vpe_all_api_h.h> 
+#undef vl_typedefs
+
+/* declare message handlers for each api */
+
+#define vl_endianfun             /* define message structures */
+#include <api/vpe_all_api_h.h> 
+#undef vl_endianfun
+
+/* instantiate all the print functions we know about */
+#define vl_print(handle, ...)
+#define vl_printfun
+#include <api/vpe_all_api_h.h>
+#undef vl_printfun
+#include "msghandler.h"
 
 void vl_api_rpc_call_main_thread (void *fp, u8 * data, u32 data_length);
 static void protobuf_send_response(protobuf_client_t *client, VppResponse *resp);
 
-// request context structure used in rpc calls to vpp main thread
-typedef struct {
-    struct ev_async *ev_response;
-    void *context;
-} protobuf_vpp_request_context_t;
+/* M: construct, but don't yet send a message */
+#define M(T,t)                                  \
+do {                                            \
+    pbm->result_ready = 0;                      \
+    mp = vl_msg_api_alloc(sizeof(*mp));         \
+    memset (mp, 0, sizeof (*mp));               \
+    mp->_vl_msg_id = ntohs (VL_API_##T);        \
+    mp->client_index = pbm->my_client_index;    \
+} while(0);
 
-// get version function called in vpp main thread
-static void vpp_get_version_rpc_callback(void *args)
+#define M2(T,t,n)                               \
+do {                                            \
+    pbm->result_ready = 0;                      \
+    mp = vl_msg_api_alloc(sizeof(*mp)+(n));     \
+    memset (mp, 0, sizeof (*mp));               \
+    mp->_vl_msg_id = ntohs (VL_API_##T);        \
+    mp->client_index = pbm->my_client_index;    \
+} while(0);
+
+
+/* S: send a message */
+#define S (vl_msg_api_send_shmem (pbm->vl_input_queue, (u8 *)&mp))
+
+/* W: wait for results, with timeout */
+#define W                                       \
+do {                                            \
+    timeout = protobuf_time_now (pbm) + 1.0;         \
+                                                \
+    while (protobuf_time_now (pbm) < timeout) {      \
+        if (pbm->result_ready == 1) {           \
+            return (pbm->retval);               \
+        }                                       \
+    }                                           \
+    return -99;                                 \
+} while(0);
+
+// process show version response
+static void vl_api_show_version_reply_t_handler 
+(vl_api_show_version_reply_t * mp)
 {
-    /* NOTE: this is just example vpe_api_get_version is not available from plugin for now */
+    protobuf_main_t * pbm = &protobuf_main;
+    i32 retval = ntohl(mp->retval);
 
-    protobuf_main_t *pbmain = &protobuf_main;
-    ASSERT(os_get_cpu_number() == 0);
-    char * vpe_api_get_version (void);
-    protobuf_vpp_request_context_t *ctx = args;
-    protobuf_vpp_event_data_t *ev_data = (protobuf_vpp_event_data_t *)ctx->ev_response->data;
-
-    // FIXME: undefined reference to vpe_api_get_version() 
-    // (needs the call in vlib for it to be accessible)
-    //ev_data->context = vpe_api_get_version();
-
-    // FIXME: send back version
-    ev_data->context = VERSION_STRING;
-
-    // send the event to plugin
-    ev_async_send (pbmain->ev_loop, ctx->ev_response);
-
+    if (retval >= 0) {
+        int len = strnlen((char *)mp->version, 128);
+        vec_validate(pbm->vpp_version, len + 1);
+        memcpy(pbm->vpp_version, mp->version, len);
+        pbm->vpp_version[len] = '\0';
+        /*
+        clib_warning ("        program: %s\n", mp->program);
+        clib_warning ("        version: %s\n", mp->version);
+        clib_warning ("     build date: %s\n", mp->build_date);
+        clib_warning ("build directory: %s\n", mp->build_directory);
+        */
+    }
+    pbm->retval = retval;
+    pbm->result_ready = 1;
 }
 
-static void vpp_get_version_response_callback(struct ev_loop *loop, struct ev_async *watcher, int revents)
+// call show version vpp api call and wait for response
+static int api_show_version ()
 {
-    protobuf_main_t *pbmain = &protobuf_main;
+    protobuf_main_t * pbm = &protobuf_main;
+    vl_api_show_version_t *mp;
+    f64 timeout;
+
+    M(SHOW_VERSION, show_version);
+
+    S; W;
+    /* NOTREACHED */
+    return 0;
+}
+
+/* get version request called when gpb get version request is received */
+static void protobuf_req_get_version(protobuf_client_t *client, VppResponse *resp)
+{
+    protobuf_main_t *pbm = &protobuf_main;
     VppVersionResp msg = VPP_VERSION_RESP__INIT;
-    // get event data from watcher context
-    protobuf_vpp_event_data_t *ev_data = (protobuf_vpp_event_data_t *)watcher->data;
-    // get client from event data context
-    protobuf_client_t *client = ev_data->client;
-    // get prepared response from client data
-    VppResponse *resp = &client->resp;
+    int rc = 0;
+
+    // get vpp version
+    rc = api_show_version();
+    if (rc != 0) {
+        resp->type = RESPONSE_TYPE__SIMPLE;
+        resp->retcode = rc;
+        return;
+    }
 
     // set response type
     resp->type = RESPONSE_TYPE__VPP_VERSION;
-
-    // get version from event data context
-    msg.version = (char *)ev_data->context;
-
-    // reset event context (no free as it is static string in this case)
-    ev_data->context = NULL;
-
-    // stop event watcher as we've got response already
-    ev_async_stop (pbmain->ev_loop, &client->ev_vpp);
+    msg.version = (char *)pbm->vpp_version;
 
     // prepare payload
     u8 *payload = NULL;
@@ -97,33 +155,12 @@ static void vpp_get_version_response_callback(struct ev_loop *loop, struct ev_as
 
     // return code
     resp->retcode = 0;
-
-    // send response (payload always gets freed after response is serialized)
-    protobuf_send_response(client, resp);
-}
-
-/* get version request called when gpb get version request is received */
-static void protobuf_req_get_version(protobuf_client_t *client, VppResponse *resp)
-{
-    protobuf_main_t *pbmain = &protobuf_main;
-    struct ev_async *ev_vpp = &client->ev_vpp;
-    // prepare response event handler
-    ev_async_init (ev_vpp, vpp_get_version_response_callback);
-    ev_async_start (pbmain->ev_loop, ev_vpp);
-
-    // TODO: locking
-    protobuf_vpp_request_context_t ctx;
-    ctx.ev_response = &client->ev_vpp;
-    ctx.context = NULL;    // we will get version response here
-
-    // call vpp main thread to get vpp version & wait for response
-    vl_api_rpc_call_main_thread (vpp_get_version_rpc_callback, (u8 *)&ctx, sizeof(ctx));
 }
 
 // handle received request
 int protobuf_handle_request(protobuf_client_t *client, VppRequest *req)
 {
-    protobuf_main_t *pbmain = &protobuf_main;
+    protobuf_main_t *pbm = &protobuf_main;
 
     // init response
     vpp_response__init(&client->resp);
@@ -138,11 +175,12 @@ int protobuf_handle_request(protobuf_client_t *client, VppRequest *req)
             break;
         default:
             clib_warning("unknown request type %d from %s:%d", req->type, client->address, client->port);
-            client->resp.retcode = -1;   // FIXME
-            // immediately send error response
-            protobuf_send_response(client, &client->resp);
+            client->resp.type = RESPONSE_TYPE__SIMPLE;
+            client->resp.retcode = -1;   // FIXME: add error
             break;
     }
+    // send response (payload always gets freed after response is serialized)
+    protobuf_send_response(client, &client->resp);
 
     return 0;
 }
@@ -172,5 +210,26 @@ static void protobuf_send_response(protobuf_client_t *client, VppResponse *resp)
         // start write event watcher to write response to client
         ev_io_start(protobuf_main.ev_loop, &client->ev_write);
     }
+}
+
+/* 
+ * Table of message reply handlers
+ */
+#define foreach_vpe_api_reply_msg                                       \
+_(SHOW_VERSION_REPLY, show_version_reply)                               
+
+void protobuf_api_hookup(protobuf_main_t *pbm)
+{
+#define _(N,n)                                                  \
+    vl_msg_api_set_handlers(VL_API_##N, #n,                     \
+                           vl_api_##n##_t_handler,              \
+                           vl_noop_handler,                     \
+                           vl_api_##n##_t_endian,               \
+                           vl_api_##n##_t_print,                \
+                           sizeof(vl_api_##n##_t), 1); 
+    foreach_vpe_api_reply_msg;
+#undef _
+
+    vl_msg_api_set_first_available_msg_id (VL_MSG_FIRST_AVAILABLE);
 }
 
