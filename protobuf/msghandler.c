@@ -39,7 +39,6 @@
 #undef vl_printfun
 #include "msghandler.h"
 
-void vl_api_rpc_call_main_thread (void *fp, u8 * data, u32 data_length);
 static void protobuf_send_response(protobuf_client_t *client, VppResponse *resp);
 
 /* M: construct, but don't yet send a message */
@@ -68,9 +67,9 @@ do {                                            \
 /* W: wait for results, with timeout */
 #define W                                       \
 do {                                            \
-    timeout = protobuf_time_now (pbm) + 1.0;         \
+    timeout = protobuf_time_now (pbm) + 1.0;    \
                                                 \
-    while (protobuf_time_now (pbm) < timeout) {      \
+    while (protobuf_time_now (pbm) < timeout) { \
         if (pbm->result_ready == 1) {           \
             return (pbm->retval);               \
         }                                       \
@@ -79,7 +78,7 @@ do {                                            \
 } while(0);
 
 // process show version response
-static void vl_api_show_version_reply_t_handler 
+static void vl_api_show_version_reply_t_handler
 (vl_api_show_version_reply_t * mp)
 {
     protobuf_main_t * pbm = &protobuf_main;
@@ -90,12 +89,6 @@ static void vl_api_show_version_reply_t_handler
         vec_validate(pbm->vpp_version, len + 1);
         memcpy(pbm->vpp_version, mp->version, len);
         pbm->vpp_version[len] = '\0';
-        /*
-        clib_warning ("        program: %s\n", mp->program);
-        clib_warning ("        version: %s\n", mp->version);
-        clib_warning ("     build date: %s\n", mp->build_date);
-        clib_warning ("build directory: %s\n", mp->build_directory);
-        */
     }
     pbm->retval = retval;
     pbm->result_ready = 1;
@@ -160,8 +153,6 @@ static void protobuf_req_get_version(protobuf_client_t *client, VppResponse *res
 // handle received request
 int protobuf_handle_request(protobuf_client_t *client, VppRequest *req)
 {
-    protobuf_main_t *pbm = &protobuf_main;
-
     // init response
     vpp_response__init(&client->resp);
     client->resp.id = req->id;
@@ -169,12 +160,12 @@ int protobuf_handle_request(protobuf_client_t *client, VppRequest *req)
     // handle different types of messages
     switch(req->type) {
         case REQUEST_TYPE__GET_VERSION:
-            clib_warning("received get version request from %s:%d", client->address, client->port);
+            clib_warning("received get version request from %s:%d", client->hostname, client->port);
             // call get version request, response will be sent in async response from vpp main thread
             protobuf_req_get_version(client, &client->resp);
             break;
         default:
-            clib_warning("unknown request type %d from %s:%d", req->type, client->address, client->port);
+            clib_warning("unknown request type %d from %s:%d", req->type, client->hostname, client->port);
             client->resp.type = RESPONSE_TYPE__SIMPLE;
             client->resp.retcode = -1;   // FIXME: add error
             break;
@@ -214,8 +205,9 @@ static void protobuf_send_response(protobuf_client_t *client, VppResponse *resp)
 
 /* 
  * Table of message reply handlers
- */
-#define foreach_vpe_api_reply_msg                                       \
+*/
+
+#define foreach_vpe_api_reply_msg                               \
 _(SHOW_VERSION_REPLY, show_version_reply)                               
 
 void protobuf_api_hookup(protobuf_main_t *pbm)
@@ -233,3 +225,16 @@ void protobuf_api_hookup(protobuf_main_t *pbm)
     vl_msg_api_set_first_available_msg_id (VL_MSG_FIRST_AVAILABLE);
 }
 
+#undef vl_api_version
+#define vl_api_version(n,v) static u32 vpe_api_version = v;
+#include <api/vpe.api.h>
+#undef vl_api_version
+
+void vl_client_add_api_signatures (vl_api_memclnt_create_t *mp)
+{
+    /*
+     * Send the main API signature in slot 0. This bit of code must
+     * match the checks in ../vpe/api/api.c: vl_msg_api_version_check().
+     */
+    mp->api_versions[0] = clib_host_to_net_u32 (vpe_api_version);
+}
