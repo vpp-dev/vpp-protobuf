@@ -20,8 +20,9 @@
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
 #include <ev.h>
+#include <vnet/vnet.h>
 #include <vppinfra/error.h>
-#include "vpp.pb-c.h"
+#include "tcpclient.h"
 
 typedef struct {
     /* input queue */
@@ -31,17 +32,6 @@ typedef struct {
      * the queue / client. This works in sim replay.
      */
     int my_client_index;
-    /*
-     * This is the (shared VM) address of the registration,
-     * don't use it to id the connection since it can't possibly
-     * work in simulator replay.
-     */
-    vl_api_registration_t *my_registration;
-
-    u8 rx_thread_jmpbuf_valid;
-    u8 connected_to_vlib;
-    jmp_buf rx_thread_jmpbuf;
-    pthread_t rx_thread_handle;
 
     /* Main thread can spin (w/ timeout) here if needed */
     u32 async_mode;
@@ -60,9 +50,20 @@ typedef struct {
 
     /* context variables */
     u8 *vpp_version;
+
+    u8 hostname[128];
+    int port;
+    protobuf_client_t *client;
+
+    /* convenience */
+    vlib_main_t * vlib_main;
+    vnet_main_t * vnet_main;
 } protobuf_main_t;
 
 extern protobuf_main_t protobuf_main;
+
+int connect_server (protobuf_main_t * pbm, u8 * serverip, u16 port, u8 is_ipv6);
+int disconnect_server (protobuf_main_t * pbm);
 
 static inline f64 protobuf_time_now (protobuf_main_t *pbm)
 {
@@ -71,4 +72,3 @@ static inline f64 protobuf_time_now (protobuf_main_t *pbm)
 void protobuf_api_hookup (protobuf_main_t *pbm);
 
 #endif
-
