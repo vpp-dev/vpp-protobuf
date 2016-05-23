@@ -17,7 +17,7 @@
 
 #include <stdint.h>
 #include <ev.h>
-#include "vppprotobuf.h"
+#include "vpp.pb-c.h"
 
 // max message size 16 MB
 #define MAX_GPB_MESSAGE_SIZE    (1 << 24)
@@ -34,8 +34,11 @@ typedef struct {
     int fd;
     struct ev_io ev_read;
     struct ev_io ev_write;
+    struct ev_async ev_disconnect;
 
-    char address[128];
+    u8 is_ipv6;
+    char hostname[128];
+    u8 address[16];
     int port;
 
     int state;  // client state
@@ -48,6 +51,12 @@ typedef struct {
 
     VppResponse resp;   // cached response in progress
 } protobuf_client_t;
+
+// vpp return value struct
+typedef struct {
+	int32_t	ret_code;
+	uint8_t *err_desc;
+} protobuf_vpp_retval_t;
 
 /**
  * @brief Connect TCP socket to host on port
@@ -70,4 +79,3 @@ void protobuf_client_disconnect(protobuf_client_t *client);
 void protobuf_client_free(protobuf_client_t *client);
 
 #endif
-

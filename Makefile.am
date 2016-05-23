@@ -13,11 +13,13 @@
 
 AUTOMAKE_OPTIONS = foreign subdir-objects
 
-AM_CFLAGS = -Wall -I@TOOLKIT_INCLUDE@
+AM_CFLAGS = -Wall
 
-lib_LTLIBRARIES = protobuf.la
-protobuf_la_SOURCES = protobuf/main.c protobuf/vpp.pb-c.c protobuf/tcpclient.c protobuf/msghandler.c protobuf/vppapi.c
-protobuf_la_LDFLAGS = -module -lev -lprotobuf-c
+bin_PROGRAMS = vpp_protobuf
+
+vpp_protobuf_SOURCES = protobuf/main.c protobuf/vpp.pb-c.c protobuf/tcpclient.c protobuf/msghandler.c
+vpp_protobuf_LDADD = -lvlibmemoryclient -lvlibapi -lvlib_unix -lvlib \
+					-lsvm -lsvmdb -lrt -ldl -lvppinfra -lpthread -lev -lprotobuf-c
 
 BUILT_SOURCES = protobuf/vpp.pb-c.c protobuf/vpp.pb-c.h
 
@@ -28,8 +30,3 @@ SUFFIXES = .pb-c.c .pb-c.h
 
 nobase_include_HEADERS =
 
-if WITH_PLUGIN_TOOLKIT
-install-data-hook:
-	mkdir /usr/lib/vpp_plugins || true
-	cp $(prefix)/lib/protobuf.so.*.*.* /usr/lib/vpp_plugins
-endif

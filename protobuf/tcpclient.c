@@ -26,6 +26,7 @@
 
 static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents);
 static void protobuf_write_cb(struct ev_loop *loop, struct ev_io *watcher, int revents);
+static void disconnect_callback(struct ev_loop *loop, struct ev_async *watcher, int revents);
 
 protobuf_client_t *protobuf_tcp_connect(protobuf_client_t *client, const char *hostname, int port)
 {
@@ -75,8 +76,8 @@ protobuf_client_t *protobuf_tcp_connect(protobuf_client_t *client, const char *h
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
     client->fd = fd;
-    strncpy(client->address, hostname, sizeof(client->address));
-    client->address[sizeof(client->address)-1] = '\0';
+    strncpy(client->hostname, hostname, sizeof(client->hostname));
+    client->hostname[sizeof(client->hostname)-1] = '\0';
     client->port = port;
 
     // store pointer to client so we can use it when event occurs
@@ -98,6 +99,11 @@ protobuf_client_t *protobuf_tcp_connect(protobuf_client_t *client, const char *h
     ev_w = &client->ev_write;
     ev_io_init(ev_w, protobuf_write_cb, fd, EV_WRITE);
 
+    // prepare disconnect event handler
+	struct ev_async *ev_disconnect = &client->ev_disconnect;
+    ev_async_init (ev_disconnect, disconnect_callback);
+    ev_async_start (protobuf_main.ev_loop, ev_disconnect);
+
     return client;
 }
 
@@ -118,7 +124,7 @@ void protobuf_client_free(protobuf_client_t *client)
 
     vec_free(client->buf_read);
     vec_free(client->buf_write);
-    free(client);
+	clib_mem_free(client);
 }
 
 static uint32_t protobuf_read_msg_size(protobuf_client_t *client)
@@ -145,7 +151,6 @@ static uint32_t protobuf_read_msg_size(protobuf_client_t *client)
 static void protobuf_process_buffer(protobuf_client_t *client, const uint8_t *buf, ssize_t buf_size)
 {
     protobuf_main_t *pbm = &protobuf_main;
-    struct ev_loop *loop = pbm->ev_loop;
     int rc = 0;
 
     VppRequest *req = vpp_request__unpack(&pbm->allocator, buf_size, buf);
@@ -158,7 +163,7 @@ static void protobuf_process_buffer(protobuf_client_t *client, const uint8_t *bu
 
     rc = protobuf_handle_request(client, req);
     if (rc < 0) {
-        clib_warning("error processing request from %s:%d message id: %d", client->address, client->port, req->id);
+        clib_warning("error processing request from %s:%d message id: %d", client->hostname, client->port, req->id);
     }
 
     vpp_request__free_unpacked(req, &pbm->allocator);
@@ -180,9 +185,9 @@ static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int re
             rsize = protobuf_read_msg_size(client);
             if (rsize <= 0) {
                 if (rsize < 0)
-                    clib_warning("error reading data from client %s:%d. closing connection", client->address, client->port);
+                    clib_warning("error reading data from client %s:%d. closing connection", client->hostname, client->port);
                 else
-                    clib_warning("client %s:%d disconnected", client->address, client->port);
+                    clib_warning("client %s:%d disconnected", client->hostname, client->port);
                 protobuf_client_disconnect(client);
                 return;
             }
@@ -191,7 +196,7 @@ static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int re
                     || client->remaining_size > MAX_GPB_MESSAGE_SIZE) {
                 clib_warning("received invalid message size %d from client "
                         "%s:%d. closing connection",
-                        client->remaining_size, client->address, client->port);
+                        client->remaining_size, client->hostname, client->port);
                 protobuf_client_disconnect(client);
                 return;
             }
@@ -208,10 +213,10 @@ static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int re
             if (rsize <= 0) {
                 if (rsize < 0)
                     clib_warning("error reading data from client %s:%d. "
-                            "closing connection", client->address, client->port);
+                            "closing connection", client->hostname, client->port);
                 else
                     clib_warning("client %s:%d disconnected",
-                            client->address, client->port);
+                            client->hostname, client->port);
                 protobuf_client_disconnect(client);
                 return;
             }
@@ -239,7 +244,7 @@ static void protobuf_read_cb(struct ev_loop *loop, struct ev_io *watcher, int re
             break;
         default:
             clib_warning("client %s:%d unknown state %d. closing connection",
-                    client->address, client->port, client->state);
+                    client->hostname, client->port, client->state);
             protobuf_client_disconnect(client);
             break;
     }
@@ -262,7 +267,7 @@ static void protobuf_write_cb(struct ev_loop *loop, struct ev_io *watcher, int r
         if (errno == EPIPE)
             clib_warning("client %s:%d disconnected before response was sent", client->address, client->port);
         else
-            clib_warning("error sending response to %s:%d (%s)", client->address, client->port, strerror(errno));
+            clib_warning("error sending response to %s:%d (%s)", client->hostname, client->port, strerror(errno));
         protobuf_client_disconnect(client);
         return;
     }
@@ -286,3 +291,12 @@ static void protobuf_write_cb(struct ev_loop *loop, struct ev_io *watcher, int r
     ev_io_start(pbm->ev_loop, &client->ev_read);
 }
 
+static void disconnect_callback(struct ev_loop *loop, struct ev_async *watcher, int revents)
+{
+    protobuf_main_t *pbmain = &protobuf_main;
+
+    // stop event watcher as we've got response already
+    ev_async_stop (pbmain->ev_loop, &pbmain->client->ev_disconnect);
+    disconnect_server (pbmain);
+    clib_warning ("Disconnected ...");
+}
