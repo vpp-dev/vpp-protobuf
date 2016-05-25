@@ -27,8 +27,16 @@
 typedef struct {
     /* input queue */
     unix_shared_memory_queue_t * vl_input_queue;
+
+    /* interface name table */
+    uword * sw_if_index_by_interface_name;
+
+    /* routes destination map */
+    uword * ipv4_hops_by_destination_addr_table;
+    uword * ipv6_hops_by_destination_addr_table;
+
     /*
-     * All VLIB-side message handlers use my_client_index to identify 
+     * All VLIB-side message handlers use my_client_index to identify
      * the queue / client. This works in sim replay.
      */
     int my_client_index;
@@ -60,6 +68,26 @@ typedef struct {
     vnet_main_t * vnet_main;
 } protobuf_main_t;
 
+typedef union {
+  u8 as_u8[4];
+  u32 as_32;
+} ipv4_address_t;
+
+typedef union {
+  u8 as_u8[16];
+  u32 as_u32[4];
+} ipv6_address_t;
+
+typedef struct {
+  ipv4_address_t address;
+  u32 prefix;
+} ipv4_destination_t;
+
+typedef struct {
+  ipv6_address_t address;
+  u32 prefix;
+} ipv6_destination_t;
+
 extern protobuf_main_t protobuf_main;
 
 int connect_server (protobuf_main_t * pbm, u8 * serverip, u16 port, u8 is_ipv6);
@@ -69,6 +97,8 @@ static inline f64 protobuf_time_now (protobuf_main_t *pbm)
 {
     return clib_time_now (&pbm->clib_time);
 }
+
 void protobuf_api_hookup (protobuf_main_t *pbm);
+int protobuf_interface_dump (protobuf_main_t *pbm);
 
 #endif
