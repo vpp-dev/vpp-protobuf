@@ -20,6 +20,7 @@
 /* For gethostbyname */
 #include <netdb.h>
 #include <fcntl.h>
+#include <vnet/map/map.h>
 #include "vppprotobuf.h"
 #include "msghandler.h"
 #include "tcpclient.h"
@@ -115,6 +116,7 @@ void protobuf_client_disconnect(protobuf_client_t *client)
     ev_io_stop(protobuf_main.ev_loop, &client->ev_read);
     ev_io_stop(protobuf_main.ev_loop, &client->ev_write);
     close(client->fd);
+    ev_break(protobuf_main.ev_loop, EVBREAK_ONE);
 }
 
 void protobuf_client_free(protobuf_client_t *client)
@@ -124,7 +126,24 @@ void protobuf_client_free(protobuf_client_t *client)
 
     vec_free(client->buf_read);
     vec_free(client->buf_write);
-	clib_mem_free(client);
+
+    ipv4_destination_t * ipv4_k_dest = 0;
+    ipv4_address_t * ipv4_v_hops;
+    hash_foreach_mem (ipv4_k_dest, ipv4_v_hops, protobuf_main.ipv4_hops_by_destination_addr_table,
+    ({
+    	vec_free (ipv4_v_hops);
+    }));
+    hash_free (protobuf_main.ipv4_hops_by_destination_addr_table);
+
+    ipv6_destination_t * ipv6_k_dest = 0;
+    ipv6_address_t * ipv6_v_hops;
+    hash_foreach_mem (ipv6_k_dest, ipv6_v_hops, protobuf_main.ipv6_hops_by_destination_addr_table,
+    ({
+    	vec_free (ipv6_v_hops);
+    }));
+    hash_free (protobuf_main.ipv6_hops_by_destination_addr_table);
+
+    clib_mem_free(client);
 }
 
 static uint32_t protobuf_read_msg_size(protobuf_client_t *client)
@@ -155,8 +174,7 @@ static void protobuf_process_buffer(protobuf_client_t *client, const uint8_t *bu
 
     VppRequest *req = vpp_request__unpack(&pbm->allocator, buf_size, buf);
     if (req == NULL) {
-        clib_warning("error unpacking incoming GPB request, "
-                "closing client connection");
+        clib_warning("error unpacking incoming GPB request, closing client connection");
         protobuf_client_disconnect(client);
         return;
     }
