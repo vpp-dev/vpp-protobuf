@@ -13,7 +13,7 @@
 
 AUTOMAKE_OPTIONS = foreign subdir-objects
 
-AM_CFLAGS = -Wall
+AM_CFLAGS = -Wall -g
 
 bin_PROGRAMS = vpp_protobuf
 
