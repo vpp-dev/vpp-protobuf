@@ -42,8 +42,6 @@ static int connect_to_vpe(char *name)
 
 int connect_server (protobuf_main_t * pbm, u8 * serverip, u16 port, u8 is_ipv6)
 {
-	clib_warning("Connecting to server %s on port %d ...", serverip, port);
-
 	memcpy (pbm->hostname, serverip, vec_len(serverip));
 	pbm->port = port;
 
@@ -86,7 +84,6 @@ int main (int argc, char ** argv)
     u32 port = ~0;
 
     while (unformat_check_input(input) != UNFORMAT_END_OF_INPUT) {
-
         if (unformat (input, "host %s", &serverIP))
         	;
         else if (unformat (input, "port %d", &port))
@@ -106,7 +103,6 @@ int main (int argc, char ** argv)
     protobuf_main.allocator.free = &pb_free;
     protobuf_main.allocator.allocator_data = NULL;
     protobuf_main.ev_loop = ev_default_loop(0);
-
     protobuf_main.port = 0;
     protobuf_main.client = NULL;
 
@@ -114,11 +110,13 @@ int main (int argc, char ** argv)
 
     protobuf_api_hookup(&protobuf_main);
 
-    if (connect_to_vpe("vpp_api_test") < 0) {
+    if (connect_to_vpe("vpp_protobuf") < 0) {
         svm_region_exit();
         fformat (stderr, "Couldn't connect to vpe, exiting...\n");
         exit (1);
     }
+
+    protobuf_interface_dump(&protobuf_main);
 
     while(1)
     {
@@ -134,6 +132,7 @@ int main (int argc, char ** argv)
         clib_warning("Retry ...");
         sleep(3);
     }
+
     protobuf_client_free(protobuf_main.client);
 
     vl_client_disconnect_from_vlib();
