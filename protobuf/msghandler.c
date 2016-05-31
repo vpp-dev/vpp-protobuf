@@ -116,6 +116,11 @@ _(ip_add_del_route_reply)
 foreach_standard_reply_retval_handler;
 #undef _
 
+// handler to avoid "msg_handler_internal:364: no handler for msg id 13" warning
+static void vl_api_sw_interface_set_flags_t_handler (vl_api_sw_interface_set_flags_t * mp)
+{
+}
+
 // process dump interfaces response
 static void vl_api_sw_interface_details_t_handler (vl_api_sw_interface_details_t * mp)
 {
@@ -146,6 +151,7 @@ static void vl_api_show_version_reply_t_handler (vl_api_show_version_reply_t * m
 
 #define foreach_vpe_api_reply_msg                       \
 _(SW_INTERFACE_DETAILS, sw_interface_details)           \
+_(SW_INTERFACE_SET_FLAGS, sw_interface_set_flags)       \
 _(CONTROL_PING_REPLY, control_ping_reply)               \
 _(SHOW_VERSION_REPLY, show_version_reply)               \
 _(IP_ADD_DEL_ROUTE_REPLY, ip_add_del_route_reply)
