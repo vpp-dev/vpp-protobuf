@@ -526,9 +526,21 @@ static void protobuf_req_cfg_routes(protobuf_client_t *client, VppResponse *resp
     uint32_t 	i;
     for (i=0; i<req_routes->n_routes; i++)
     {
-        if (ip_add_del_route (req_routes->routes[i], req_routes->routes[i]->op) != 0) {
-            client->resp.retcode = -1;   // FIXME: add error
-            break;
+    	client->resp.retcode = ip_add_del_route (req_routes->routes[i], req_routes->routes[i]->op);
+        if (client->resp.retcode  != 0) {
+            if (client->resp.retcode == -99) {
+        		clib_warning("Connection to vpe lost ... ");
+				protobuf_main.reconnect_to_vpe = 1;
+				ev_break(protobuf_main.ev_loop, EVBREAK_ONE);
+	            break;
+            }
+            else {
+        	    uword * p = hash_get (protobuf_main.error_string_by_error_number, -client->resp.retcode);
+        	    if (p)
+        	    	clib_warning("Error : %s", p[0]);
+        	    else
+        	    	clib_warning("Error : %d", client->resp.retcode);
+            }
         }
     }
 
