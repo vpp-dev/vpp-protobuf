@@ -28,6 +28,9 @@ typedef struct {
     /* input queue */
     unix_shared_memory_queue_t * vl_input_queue;
 
+    /* errors by number */
+    uword * error_string_by_error_number;
+
     /* interface name table */
     uword * sw_if_index_by_interface_name;
 
@@ -58,6 +61,8 @@ typedef struct {
 
     /* context variables */
     u8 *vpp_version;
+
+    u8 reconnect_to_vpe;
 
     u8 hostname[128];
     int port;
