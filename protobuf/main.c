@@ -63,9 +63,17 @@ int disconnect_server (protobuf_main_t * pbm)
 void vlib_cli_output(struct vlib_main_t * vm, char * fmt, ...)
 { clib_warning ("BUG"); }
 
+void init_error_string_table (protobuf_main_t * pbm)
+{
+    pbm->error_string_by_error_number = hash_create (0, sizeof(uword));
+#define _(n,v,s) hash_set (pbm->error_string_by_error_number, -v, s);
+    foreach_vnet_api_error;
+#undef _
+    hash_set (pbm->error_string_by_error_number, 99, "Misc");
+}
+
 int main (int argc, char ** argv)
 {
-	protobuf_main_t * pbm = &protobuf_main;
     unformat_input_t _argv, *input = &_argv;
     u8 * heap;
     mheap_t * h;
@@ -105,36 +113,47 @@ int main (int argc, char ** argv)
     protobuf_main.ev_loop = ev_default_loop(0);
     protobuf_main.port = 0;
     protobuf_main.client = NULL;
+    protobuf_main.reconnect_to_vpe = 1;
+    
+    init_error_string_table(&protobuf_main);
 
-    clib_time_init (&pbm->clib_time);
+    while (1) {
+    	clib_time_init (&protobuf_main.clib_time);
+    	protobuf_api_hookup(&protobuf_main);
 
-    protobuf_api_hookup(&protobuf_main);
+    	if (protobuf_main.reconnect_to_vpe) {
+    	    if (connect_to_vpe("vpp_protobuf") < 0) {
+    	        svm_region_exit();
+    	        fformat (stderr, "Couldn't connect to vpe, exiting ...\n");
+    	        exit (1);
+    	    }
+    	    protobuf_main.reconnect_to_vpe = 0;
 
-    if (connect_to_vpe("vpp_protobuf") < 0) {
-        svm_region_exit();
-        fformat (stderr, "Couldn't connect to vpe, exiting...\n");
-        exit (1);
+    	    protobuf_interface_dump(&protobuf_main);
+    	}
+    	
+    	while(1)
+    	{
+            protobuf_main.client = protobuf_tcp_connect(protobuf_main.client, (const char*)serverIP, port);
+            if (protobuf_main.client != NULL) {
+               clib_warning("Connected to client %s:%d", serverIP, port);
+               memcpy(protobuf_main.client->address, protobuf_main.hostname, 16);
+               // start processing events while any watcher is active
+               ev_run(protobuf_main.ev_loop, 0);
+
+               protobuf_client_disconnect(protobuf_main.client);
+               if (protobuf_main.reconnect_to_vpe == 1) {
+            	   clib_warning("Connection to vpe has been lost, reconnecting ...");
+            	   break;
+               }
+            }
+
+            // if client is not connected or it disconnected
+            clib_warning("Retry ...");
+            sleep(3);
+    	}
+    	protobuf_client_free(protobuf_main.client);
+    	vl_client_disconnect_from_vlib();
     }
-
-    protobuf_interface_dump(&protobuf_main);
-
-    while(1)
-    {
-        protobuf_main.client = protobuf_tcp_connect(protobuf_main.client, (const char*)serverIP, port);
-        if (protobuf_main.client != NULL) {
-            clib_warning("Connected to client %s:%d", serverIP, port);
-        	memcpy(protobuf_main.client->address, protobuf_main.hostname, 16);
-            // start processing events while any watcher is active
-            ev_run(protobuf_main.ev_loop, 0);
-        }
-
-        // if client is not connected or it disconnected
-        clib_warning("Retry ...");
-        sleep(3);
-    }
-
-    protobuf_client_free(protobuf_main.client);
-
-    vl_client_disconnect_from_vlib();
     exit (0);
 }
