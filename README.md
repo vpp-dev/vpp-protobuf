@@ -2,8 +2,8 @@ Build and Install
 =================
 
 ```bash
-autoreconf -fis
-./configure --with-plugin-toolkit
+autoreconf
+./configure
 make
 sudo make install
 ```
